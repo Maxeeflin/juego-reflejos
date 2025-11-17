@@ -41,7 +41,10 @@ let gameState = {
   players: [],
   myIndex: -1,
   turnoIndex: 0,
+  // velocidad actual usada por growLoop (se asigna desde sessionVel al inicio de cada circle)
   velocidad: VELOCIDAD_INICIAL,
+  // sessionVel mantiene la progresión de velocidad dentro de la misma ronda (entre aciertos)
+  sessionVel: VELOCIDAD_INICIAL,
   radio: RADIO_INICIAL,
   x: 0, y: 0,
   rondaEnCurso: false,
@@ -132,6 +135,8 @@ function updateRoomUI() {
 function startLocalPlay() {
   gameState.mode = "playing";
   gameState.myName = nameInput.value.trim() || "Player";
+  // reset EVERYTHING for a new player session (sessionVel reset so first circle is slow)
+  gameState.sessionVel = VELOCIDAD_INICIAL;
   gameState.velocidad = VELOCIDAD_INICIAL;
   gameState.radio = RADIO_INICIAL;
   gameState.vidas = VIDAS_FUERA;
@@ -162,7 +167,9 @@ function startCountdown(n, cb) {
 }
 
 function startRound() {
-  gameState.velocidad = VELOCIDAD_INICIAL; // Reiniciar velocidad al empezar ronda
+  // IMPORTANT: velocidad se toma desde sessionVel.
+  // sessionVel mantiene el incremento tras aciertos dentro de la misma ronda (hasta que pierdes).
+  gameState.velocidad = gameState.sessionVel;
   gameState.radio = RADIO_INICIAL;
   gameState.x = randInt(RADIO_MAXIMO, CANVAS_WIDTH - RADIO_MAXIMO);
   gameState.y = randInt(RADIO_MAXIMO, CANVAS_HEIGHT - RADIO_MAXIMO);
@@ -185,6 +192,8 @@ gameState.growLoop = function growLoop() {
     stopGrowJob();
     gameState.rondaEnCurso = false;
     gameState.rondasPerdidas += 1;
+    // al explotar la bola, la ronda termina: reseteamos sessionVel para la siguiente ronda
+    gameState.sessionVel = VELOCIDAD_INICIAL;
     drawExplosion(gameState.x, gameState.y, gameState.radio);
     setTimeout(() => onRoundEnded(), 1000);
     return;
@@ -200,20 +209,31 @@ function onCanvasClick(evt) {
   if (!gameState.rondaEnCurso) return;
   const dist = Math.hypot(x - gameState.x, y - gameState.y);
   if (dist <= gameState.radio) {
+    // HIT: subir velocidad para la próxima bola DENTRO DE LA MISMA RONDA
     stopGrowJob();
     const puntos = Math.max(0, Math.floor(RADIO_MAXIMO - gameState.radio));
     gameState.puntos += puntos;
     drawHitEffect(x, y, "+" + puntos);
+
+    // aumentar sessionVel (persistirá mientras el jugador no pierda la ronda)
+    gameState.sessionVel = Math.min(5, (gameState.sessionVel + VELOCIDAD_INCREMENTO)); // límite razonable
+    // asignar velocidad actual para este ciclo (aunque startRound volverá a leer sessionVel)
+    gameState.velocidad = gameState.sessionVel;
+
     gameState.rondaEnCurso = false;
-    gameState.velocidad += VELOCIDAD_INCREMENTO; // aumentar velocidad tras acierto
+
+    // pequeña pausa y volver a generar otro círculo dentro de la misma ronda
     setTimeout(() => startRound(), 250);
   } else {
+    // MISS
     gameState.vidas -= 1;
     drawHitEffect(x, y, "❌");
     if (gameState.vidas <= 0) {
+      // pierde la ronda: resetear sessionVel para la próxima ronda
       stopGrowJob();
       gameState.rondasPerdidas += 1;
       gameState.rondaEnCurso = false;
+      gameState.sessionVel = VELOCIDAD_INICIAL;
       drawExplosion(gameState.x, gameState.y, gameState.radio, true);
       setTimeout(() => onRoundEnded(), 1000);
     } else drawFrame();
