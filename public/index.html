@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Reflejos Multiplayer</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="root">
+    <div id="topbar">
+      <div id="roomUI">
+        <button id="btnCreate">Crear Sala</button>
+        <input id="joinCode" placeholder="Código sala" maxlength="6" />
+        <input id="nameInput" placeholder="Tu nombre" />
+        <button id="btnJoin">Unirse</button>
+        <span id="roomInfo"></span>
+      </div>
+    </div>
+
+    <div id="gameWrap">
+      <canvas id="gameCanvas" width="600" height="450"></canvas>
+      <div id="sidePanel">
+        <div id="playerPanels"></div>
+        <div id="controls">
+          <button id="btnStart" style="display:none">Empezar partida (host)</button>
+          <div id="status"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="finalScreen" class="overlay" style="display:none;"></div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

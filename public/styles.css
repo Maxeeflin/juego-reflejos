@@ -1,0 +1,12 @@
+/* styles.css - básico */
+body { margin:0; background:#20232a; color:white; font-family: Arial, sans-serif; }
+#root { padding:10px; }
+#topbar { margin-bottom:8px; }
+#roomUI input, #roomUI button { margin-right:6px; padding:6px 8px; border-radius:6px; border: none; }
+#gameWrap { display:flex; gap:12px; }
+#gameCanvas { background:#101010; border-radius:8px; box-shadow: 0 8px 20px rgba(0,0,0,0.6); }
+#sidePanel { width:260px; }
+.playerCard { background:#2a2f36; padding:12px; border-radius:8px; margin-bottom:8px; }
+.playerCard h4 { margin:0 0 6px 0; }
+#status { margin-top:12px; }
+.overlay { position:fixed; left:0; top:0; right:0; bottom:0; display:flex; align-items:center; justify-content:center; flex-direction:column; background: rgba(0,0,0,0.6); }
