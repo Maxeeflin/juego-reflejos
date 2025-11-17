@@ -6,7 +6,6 @@ const ctx = canvas.getContext("2d");
 const CANVAS_WIDTH = canvas.width;
 const CANVAS_HEIGHT = canvas.height;
 
-// Utils for DOM
 const $ = id => document.getElementById(id);
 
 let myRoom = null;
@@ -24,6 +23,7 @@ const btnStart = $("btnStart");
 const statusDiv = $("status");
 const finalScreen = $("finalScreen");
 
+// Game constants
 const RONDAS_POR_JUGADOR = 3;
 const VIDAS_FUERA = 3;
 const RADIO_INICIAL = 10;
@@ -33,7 +33,7 @@ const VELOCIDAD_INCREMENTO = 0.12;
 const UPDATE_MS = 25;
 const CUENTA_ATRAS_SEG = 3;
 
-// local game state
+// Local game state
 let gameState = {
   mode: "menu",
   myName: "",
@@ -44,7 +44,6 @@ let gameState = {
   velocidad: VELOCIDAD_INICIAL,
   radio: RADIO_INICIAL,
   x: 0, y: 0,
-  circleId: null,
   rondaEnCurso: false,
   vidas: VIDAS_FUERA,
   rondasPerdidas: 0,
@@ -55,7 +54,6 @@ let gameState = {
 // ----------------- Socket handlers -----------------
 socket.on("connect", () => {
   mySocketId = socket.id;
-  console.log("connected", mySocketId);
 });
 
 socket.on("room_update", (room) => {
@@ -86,9 +84,7 @@ btnCreate.addEventListener("click", () => {
       statusDiv.innerText = `Sala creada: ${res.code} (esperando jugadores...)`;
       updateRoomUI();
       btnStart.style.display = "inline-block";
-    } else {
-      alert("Error creando sala");
-    }
+    } else alert("Error creando sala");
   });
 });
 
@@ -119,7 +115,7 @@ btnStart.addEventListener("click", () => {
 function updateRoomUI() {
   playerPanels.innerHTML = "";
   if (!myRoom) return;
-  roomInfo.innerText = `Sala: ${myRoom.code}  (${myRoom.players.length}/${myRoom.capacity})`;
+  roomInfo.innerText = `Sala: ${myRoom.code} (${myRoom.players.length}/${myRoom.capacity})`;
   myRoom.players.forEach(p => {
     const div = document.createElement("div");
     div.className = "playerCard";
@@ -129,11 +125,7 @@ function updateRoomUI() {
     playerPanels.appendChild(div);
   });
 
-  if (myRoom.hostSocketId === mySocketId && !myRoom.started) {
-    btnStart.style.display = "inline-block";
-  } else {
-    btnStart.style.display = "none";
-  }
+  btnStart.style.display = (myRoom.hostSocketId === mySocketId && !myRoom.started) ? "inline-block" : "none";
 }
 
 // ----------------- Local game logic -----------------
@@ -170,9 +162,7 @@ function startCountdown(n, cb) {
 }
 
 function startRound() {
-  // reinicia la velocidad al inicio de cada ronda
-  gameState.velocidad = VELOCIDAD_INICIAL;
-
+  gameState.velocidad = VELOCIDAD_INICIAL; // Reiniciar velocidad al empezar ronda
   gameState.radio = RADIO_INICIAL;
   gameState.x = randInt(RADIO_MAXIMO, CANVAS_WIDTH - RADIO_MAXIMO);
   gameState.y = randInt(RADIO_MAXIMO, CANVAS_HEIGHT - RADIO_MAXIMO);
@@ -215,7 +205,7 @@ function onCanvasClick(evt) {
     gameState.puntos += puntos;
     drawHitEffect(x, y, "+" + puntos);
     gameState.rondaEnCurso = false;
-    gameState.velocidad += VELOCIDAD_INCREMENTO;
+    gameState.velocidad += VELOCIDAD_INCREMENTO; // aumentar velocidad tras acierto
     setTimeout(() => startRound(), 250);
   } else {
     gameState.vidas -= 1;
@@ -299,7 +289,6 @@ function showFinalResults(results) {
   btn.innerText="Reiniciar partida";
   btn.onclick=()=>{
     finalScreen.style.display="none";
-    // reinicia el juego local sin destruir sala
     socket.emit("start_game",{code:myRoom.code}, res=>{
       if(res && res.ok){
         startLocalPlay();
@@ -334,5 +323,4 @@ function showFinalResults(results) {
   step();
 }
 
-// ------------------ initialize small UI labels ------------------
 drawCenteredText("Bienvenido — crea o únete a una sala",20);
