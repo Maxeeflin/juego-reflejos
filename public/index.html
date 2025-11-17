@@ -1,64 +1,53 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <title>Juego de Reflejos</title>
-  <link rel="stylesheet" href="estilos.css">
+<meta charset="UTF-8">
+<title>Juego de Reflejos</title>
+<link rel="stylesheet" href="estilos.css">
 </head>
 <body>
-  <div id="menu">
+<div id="menu">
     <h1>Juego de Reflejos</h1>
     <label for="numJugadores">Número de jugadores:</label>
     <select id="numJugadores">
-      <option value="2">2 Jugadores</option>
-      <option value="3">3 Jugadores</option>
+        <option value="2">2 Jugadores</option>
+        <option value="3">3 Jugadores</option>
     </select>
     <button id="crearSala">Crear Sala</button>
     <input type="text" id="lobbyInput" placeholder="ID de lobby">
     <button id="unirseSala">Unirse a Sala</button>
-  </div>
+</div>
 
-  <div id="juego" style="display:none;">
+<div id="juego" style="display:none;">
     <h2 id="turno">Turno: </h2>
     <canvas id="canvas" width="600" height="600"></canvas>
     <div id="infoJugadores"></div>
-  </div>
+</div>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="juego.js"></script>
-  <script>
-    const btnCrear = document.getElementById("crearSala");
-    const btnUnirse = document.getElementById("unirseSala");
-    const numJugadores = document.getElementById("numJugadores");
-    const lobbyInput = document.getElementById("lobbyInput");
-    const menu = document.getElementById("menu");
-    const juegoDiv = document.getElementById("juego");
+<script src="/socket.io/socket.io.js"></script>
+<script src="juego.js"></script>
+<script>
+const btnCrear = document.getElementById("crearSala");
+const btnUnirse = document.getElementById("unirseSala");
+const numJugadores = document.getElementById("numJugadores");
+const lobbyInput = document.getElementById("lobbyInput");
+const menu = document.getElementById("menu");
+const juegoDiv = document.getElementById("juego");
 
-    btnCrear.addEventListener("click", () => {
-      crearLobby(parseInt(numJugadores.value));
-      menu.style.display = "none";
-      juegoDiv.style.display = "block";
-    });
+btnCrear.addEventListener("click", () => {
+    crearLobby(parseInt(numJugadores.value));
+    menu.style.display = "none";
+    juegoDiv.style.display = "block";
+});
 
-    btnUnirse.addEventListener("click", () => {
-      const id = lobbyInput.value.trim();
-      if(id) {
+btnUnirse.addEventListener("click", () => {
+    const id = lobbyInput.value.trim();
+    if(id) {
         unirseLobby(id);
         menu.style.display = "none";
         juegoDiv.style.display = "block";
-      }
-    });
-
-    // Opcional: mostrar ID de sala cuando se crea
-    socket.on("lobby_creada", id => {
-      alert("Sala creada con ID: " + id);
-    });
-
-    socket.on("error_lobby", msg => {
-      alert(msg);
-      menu.style.display = "block";
-      juegoDiv.style.display = "none";
-    });
-  </script>
+    }
+});
+</script>
 </body>
 </html>
