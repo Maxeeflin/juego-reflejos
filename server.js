@@ -121,11 +121,7 @@ io.on("connection", (socket) => {
       const results = Object.values(room.players).map((p) => ({ name: p.name, points: p.points }));
       // emit game_over to room
       io.to(code).emit("game_over", { results });
-      // optionally delete room after some time
-      setTimeout(() => {
-        try { io.in(code).socketsLeave(code); } catch (e) {}
-        delete rooms[code];
-      }, 1000*60); // 1 min
+      // NOT deleting the room, so lobby remains active
     }
 
     cb && cb({ ok: true });
