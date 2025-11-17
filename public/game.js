@@ -23,11 +23,6 @@ const btnStart = $("btnStart");
 const statusDiv = $("status");
 const finalScreen = $("finalScreen");
 
-const heartsDOM = $("heartsDOM");
-const borderFlash = $("borderFlash");
-const hitFlash = $("hitFlash");
-const gameWrap = $("gameWrap");
-
 // Game constants
 const RONDAS_POR_JUGADOR = 3;
 const VIDAS_FUERA = 3;
@@ -46,8 +41,10 @@ let gameState = {
   players: [],
   myIndex: -1,
   turnoIndex: 0,
+  // velocidad actual usada por growLoop (se asigna desde sessionVel al inicio de cada circle)
   velocidad: VELOCIDAD_INICIAL,
-  sessionVel: VELOCIDAD_INICIAL, // se incrementa dentro de la misma ronda al acertar
+  // sessionVel mantiene la progresión de velocidad dentro de la misma ronda (entre aciertos)
+  sessionVel: VELOCIDAD_INICIAL,
   radio: RADIO_INICIAL,
   x: 0, y: 0,
   rondaEnCurso: false,
@@ -58,7 +55,9 @@ let gameState = {
 };
 
 // ----------------- Socket handlers -----------------
-socket.on("connect", () => { mySocketId = socket.id; });
+socket.on("connect", () => {
+  mySocketId = socket.id;
+});
 
 socket.on("room_update", (room) => {
   if (!room) return;
@@ -132,55 +131,11 @@ function updateRoomUI() {
   btnStart.style.display = (myRoom.hostSocketId === mySocketId && !myRoom.started) ? "inline-block" : "none";
 }
 
-// ----------------- DOM hearts helpers -----------------
-function renderHearts(vidas) {
-  heartsDOM.innerHTML = "";
-  for (let i = 0; i < VIDAS_FUERA; i++) {
-    const h = document.createElement("div");
-    h.className = "heart";
-    h.innerHTML = i < vidas ? `<span class="full">❤️</span>` : `<span class="empty">💔</span>`;
-    heartsDOM.appendChild(h);
-  }
-}
-
-function animateHeartLoss() {
-  const hearts = heartsDOM.querySelectorAll(".heart");
-  for (let i = hearts.length -1; i >= 0; i--) {
-    const span = hearts[i].querySelector(".full");
-    if (span) {
-      hearts[i].classList.add("broken");
-      setTimeout(()=> hearts[i].classList.remove("broken"), 700);
-      setTimeout(()=> hearts[i].innerHTML = `<span class="empty">💔</span>`, 350);
-      break;
-    }
-  }
-}
-
-// ----------------- Hit flash & shake helpers -----------------
-function showHitFlash(x, y) {
-  const rect = canvas.getBoundingClientRect();
-  const px = ((x - rect.left) / rect.width) * 100;
-  const py = ((y - rect.top) / rect.height) * 100;
-  hitFlash.style.setProperty('--x', px + '%');
-  hitFlash.style.setProperty('--y', py + '%');
-  hitFlash.classList.add('show');
-  setTimeout(() => hitFlash.classList.remove('show'), 200);
-}
-
-function doShake() {
-  gameWrap.classList.add('shake');
-  setTimeout(()=> gameWrap.classList.remove('shake'), 420);
-}
-
-function flashBorder() {
-  borderFlash.style.opacity = 1;
-  setTimeout(()=> borderFlash.style.opacity = 0, 300);
-}
-
 // ----------------- Local game logic -----------------
 function startLocalPlay() {
   gameState.mode = "playing";
   gameState.myName = nameInput.value.trim() || "Player";
+  // reset EVERYTHING for a new player session (sessionVel reset so first circle is slow)
   gameState.sessionVel = VELOCIDAD_INICIAL;
   gameState.velocidad = VELOCIDAD_INICIAL;
   gameState.radio = RADIO_INICIAL;
@@ -190,7 +145,6 @@ function startLocalPlay() {
   gameState.rondaEnCurso = false;
   gameState.growJob = null;
 
-  renderHearts(gameState.vidas);
   drawClear();
   drawCenteredText("Toca para iniciar (pantalla)", 20);
   canvas.onclick = () => {
@@ -213,6 +167,8 @@ function startCountdown(n, cb) {
 }
 
 function startRound() {
+  // IMPORTANT: velocidad se toma desde sessionVel.
+  // sessionVel mantiene el incremento tras aciertos dentro de la misma ronda (hasta que pierdes).
   gameState.velocidad = gameState.sessionVel;
   gameState.radio = RADIO_INICIAL;
   gameState.x = randInt(RADIO_MAXIMO, CANVAS_WIDTH - RADIO_MAXIMO);
@@ -220,7 +176,6 @@ function startRound() {
   gameState.rondaEnCurso = true;
   gameState.vidas = VIDAS_FUERA;
 
-  renderHearts(gameState.vidas);
   gameState.growLoop();
   canvas.onclick = onCanvasClick;
   drawFrame();
@@ -237,6 +192,7 @@ gameState.growLoop = function growLoop() {
     stopGrowJob();
     gameState.rondaEnCurso = false;
     gameState.rondasPerdidas += 1;
+    // al explotar la bola, la ronda termina: reseteamos sessionVel para la siguiente ronda
     gameState.sessionVel = VELOCIDAD_INICIAL;
     drawExplosion(gameState.x, gameState.y, gameState.radio);
     setTimeout(() => onRoundEnded(), 1000);
@@ -253,25 +209,27 @@ function onCanvasClick(evt) {
   if (!gameState.rondaEnCurso) return;
   const dist = Math.hypot(x - gameState.x, y - gameState.y);
   if (dist <= gameState.radio) {
-    // HIT
+    // HIT: subir velocidad para la próxima bola DENTRO DE LA MISMA RONDA
     stopGrowJob();
     const puntos = Math.max(0, Math.floor(RADIO_MAXIMO - gameState.radio));
     gameState.puntos += puntos;
     drawHitEffect(x, y, "+" + puntos);
-    showHitFlash(evt.clientX, evt.clientY);
-    gameState.sessionVel = Math.min(5, gameState.sessionVel + VELOCIDAD_INCREMENTO);
+
+    // aumentar sessionVel (persistirá mientras el jugador no pierda la ronda)
+    gameState.sessionVel = Math.min(5, (gameState.sessionVel + VELOCIDAD_INCREMENTO)); // límite razonable
+    // asignar velocidad actual para este ciclo (aunque startRound volverá a leer sessionVel)
     gameState.velocidad = gameState.sessionVel;
+
     gameState.rondaEnCurso = false;
+
+    // pequeña pausa y volver a generar otro círculo dentro de la misma ronda
     setTimeout(() => startRound(), 250);
   } else {
     // MISS
     gameState.vidas -= 1;
     drawHitEffect(x, y, "❌");
-    animateHeartLoss();
-    doShake();
-    flashBorder();
-
     if (gameState.vidas <= 0) {
+      // pierde la ronda: resetear sessionVel para la próxima ronda
       stopGrowJob();
       gameState.rondasPerdidas += 1;
       gameState.rondaEnCurso = false;
@@ -309,11 +267,18 @@ function drawCircle(x,y,r,color="#ff0000") { ctx.beginPath(); ctx.fillStyle=colo
 function drawFrame() {
   drawClear();
   drawCircle(gameState.x, gameState.y, gameState.radio, colorForRadius(gameState.radio));
+  drawHearts();
   ctx.fillStyle="white";
   ctx.font="16px Arial";
   ctx.textAlign="left";
   ctx.fillText(`Rondas perdidas: ${gameState.rondasPerdidas}/${RONDAS_POR_JUGADOR}`, 10,30);
   ctx.fillText(`Puntos: ${gameState.puntos}`, 10,50);
+}
+function drawHearts() {
+  const hearts="❤️".repeat(gameState.vidas)+"💔".repeat(Math.max(0,VIDAS_FUERA-gameState.vidas));
+  ctx.font="22px Arial";
+  ctx.textAlign="right";
+  ctx.fillText(hearts,CANVAS_WIDTH-10,30);
 }
 function drawExplosion(x,y,r) {
   drawCircle(x,y,r,"#000");
@@ -328,61 +293,54 @@ function randInt(a,b) { return Math.floor(Math.random()*(b-a+1))+a; }
 function showFinalResults(results) {
   drawClear();
   finalScreen.style.display="flex";
-  finalScreen.innerHTML = "";
-
-  const card = document.createElement("div");
-  card.className = "finalCard";
-
-  const title = document.createElement("h2");
-  title.innerText = "Estadísticas finales";
-  card.appendChild(title);
-
-  const podium = document.createElement("div");
-  podium.className = "podium";
-  card.appendChild(podium);
-
-  const sorted = results.slice().sort((a,b)=> b.points - a.points);
-  const slots = [sorted[1] || {name:"-", points:0}, sorted[0] || {name:"-", points:0}, sorted[2] || {name:"-", points:0}];
-
-  slots.forEach((s, idx) => {
-    const slot = document.createElement("div");
-    slot.className = "slot";
-    const bar = document.createElement("div");
-    bar.className = "bar";
-    bar.style.height = "0px";
-    const label = document.createElement("div");
-    label.className = "label";
-    label.innerText = `${s.name}: ${s.points}`;
-    slot.appendChild(bar);
-    slot.appendChild(label);
-    podium.appendChild(slot);
+  finalScreen.innerHTML="";
+  let cont=document.createElement("div");
+  cont.style.color="white";
+  cont.style.textAlign="center";
+  cont.innerHTML="<h2>Estadísticas finales</h2>";
+  results.forEach(r=>{
+    const p=document.createElement("div");
+    p.style.fontSize="20px";
+    p.style.margin="8px";
+    p.innerText=`${r.name}: 0`;
+    cont.appendChild(p);
   });
-
-  const btn = document.createElement("button");
-  btn.innerText = "Reiniciar partida";
-  btn.onclick = () => {
-    finalScreen.style.display = "none";
-    socket.emit("restart_game", { code: myRoom.code }, (res) => {
-      if (res && res.ok) startLocalPlay();
-      else {
-        socket.emit("start_game", { code: myRoom.code }, (res2) => {
-          if (res2 && res2.ok) startLocalPlay();
-          else alert("Error reiniciando la partida");
-        });
-      }
+  const btn=document.createElement("button");
+  btn.innerText="Reiniciar partida";
+  btn.onclick=()=>{
+    finalScreen.style.display="none";
+    socket.emit("start_game",{code:myRoom.code}, res=>{
+      if(res && res.ok){
+        startLocalPlay();
+      } else alert("Error reiniciando la partida");
     });
   };
-  card.appendChild(btn);
-  finalScreen.appendChild(card);
+  cont.appendChild(btn);
+  finalScreen.appendChild(cont);
 
-  const bars = finalScreen.querySelectorAll(".bar");
-  const targets = slots.map(s=>s.points);
-  const maxTarget = Math.max(...targets,1);
-
-  bars.forEach((bar, i) => {
-    const heightPercent = Math.round((targets[i] / maxTarget) * 100);
-    const finalPx = Math.round((heightPercent/100)*140)+20;
-    setTimeout(()=>{ bar.style.height = finalPx + "px"; }, i*150);
-  });
+  const counters=results.map(()=>0);
+  const targets=results.map(r=>r.points||0);
+  function step(){
+    let done=true;
+    for(let i=0;i<counters.length;i++){
+      if(counters[i]<targets[i]){
+        counters[i]+=Math.max(1,Math.floor(targets[i]/20));
+        if(counters[i]>targets[i]) counters[i]=targets[i];
+        cont.children[i+1].innerText=`${results[i].name}: ${counters[i]}`;
+        done=false;
+      }
+    }
+    if(!done) requestAnimationFrame(step);
+    else{
+      let maxp=Math.max(...targets);
+      const winners=results.filter(r=>r.points===maxp);
+      const text=document.createElement("h3");
+      if(winners.length===1) text.innerText=`${winners[0].name} GANA 🏆`;
+      else text.innerText="¡Empate! 🤝";
+      cont.appendChild(text);
+    }
+  }
+  step();
 }
+
 drawCenteredText("Bienvenido — crea o únete a una sala",20);
