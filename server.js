@@ -8,8 +8,20 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// servir carpeta public
 app.use(express.static("public"));
 
+/* Rooms structure:
+rooms = {
+  ROOMCODE: {
+    code,
+    hostSocketId,
+    capacity: 2 or 3,
+    players: { socketId: { name, finished: false, points: 0 } },
+    started: false
+  }
+}
+*/
 const rooms = {};
 
 function makeCode(len = 6) {
@@ -65,26 +77,36 @@ io.on("connection", (socket) => {
 
   socket.on("start_game", ({ code }, cb) => {
     const room = rooms[code];
-    if (!room) return cb && cb({ ok: false, error: "Sala no encontrada" });
-    if (socket.id !== room.hostSocketId) return cb && cb({ ok: false, error: "Solo el host puede empezar" });
-
+    if (!room) {
+      cb && cb({ ok: false, error: "Sala no encontrada" });
+      return;
+    }
+    if (socket.id !== room.hostSocketId) {
+      cb && cb({ ok: false, error: "Solo el host puede empezar" });
+      return;
+    }
     room.started = true;
-    // reset players finished/points but keep lobby
+    // reset players finished/points
     for (const sid of Object.keys(room.players)) {
       room.players[sid].finished = false;
       room.players[sid].points = 0;
     }
-
     io.to(code).emit("game_started", { code });
     io.to(code).emit("room_update", roomSummary(code));
     cb && cb({ ok: true });
   });
 
+  // client notifies when it finished its 3 rounds
   socket.on("player_finished", ({ code, totalPoints }, cb) => {
     const room = rooms[code];
-    if (!room) return cb && cb({ ok: false, error: "Sala no encontrada" });
-    if (!room.players[socket.id]) return cb && cb({ ok: false, error: "No perteneces a la sala" });
-
+    if (!room) {
+      cb && cb({ ok: false, error: "Sala no encontrada" });
+      return;
+    }
+    if (!room.players[socket.id]) {
+      cb && cb({ ok: false, error: "No perteneces a la sala" });
+      return;
+    }
     room.players[socket.id].finished = true;
     room.players[socket.id].points = totalPoints || 0;
 
@@ -95,16 +117,15 @@ io.on("connection", (socket) => {
       Object.values(room.players).every(p => p.finished);
 
     if (allFinished) {
+      // gather results
       const results = Object.values(room.players).map((p) => ({ name: p.name, points: p.points }));
+      // emit game_over to room
       io.to(code).emit("game_over", { results });
-
-      // **NO BORRAMOS la sala**; permitimos reinicio
-      for (const sid of Object.keys(room.players)) {
-        room.players[sid].finished = false;
-        room.players[sid].points = 0;
-      }
-      room.started = false;
-      io.to(code).emit("room_update", roomSummary(code));
+      // optionally delete room after some time
+      setTimeout(() => {
+        try { io.in(code).socketsLeave(code); } catch (e) {}
+        delete rooms[code];
+      }, 1000*60); // 1 min
     }
 
     cb && cb({ ok: true });
@@ -121,10 +142,12 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
+    // cleanup: remove socket from any room it was in
     for (const code of Object.keys(rooms)) {
       if (rooms[code].players[socket.id]) {
         delete rooms[code].players[socket.id];
         io.to(code).emit("room_update", roomSummary(code));
+        // if host left, assign new host
         if (rooms[code].hostSocketId === socket.id) {
           const sids = Object.keys(rooms[code].players);
           rooms[code].hostSocketId = sids.length ? sids[0] : null;
