@@ -121,8 +121,27 @@ io.on("connection", (socket) => {
       const results = Object.values(room.players).map((p) => ({ name: p.name, points: p.points }));
       // emit game_over to room
       io.to(code).emit("game_over", { results });
-      // NOT deleting the room, so lobby remains active
+      // la sala NO se borra
     }
+
+    cb && cb({ ok: true });
+  });
+
+  // reiniciar la partida sin borrar la sala
+  socket.on("restart_game", ({ code }, cb) => {
+    const room = rooms[code];
+    if (!room) return cb && cb({ ok: false });
+
+    // reset players finished/points
+    for (const sid of Object.keys(room.players)) {
+      room.players[sid].finished = false;
+      room.players[sid].points = 0;
+    }
+
+    room.started = true;
+
+    io.to(code).emit("game_started", { code });
+    io.to(code).emit("room_update", roomSummary(code));
 
     cb && cb({ ok: true });
   });
@@ -138,12 +157,10 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    // cleanup: remove socket from any room it was in
     for (const code of Object.keys(rooms)) {
       if (rooms[code].players[socket.id]) {
         delete rooms[code].players[socket.id];
         io.to(code).emit("room_update", roomSummary(code));
-        // if host left, assign new host
         if (rooms[code].hostSocketId === socket.id) {
           const sids = Object.keys(rooms[code].players);
           rooms[code].hostSocketId = sids.length ? sids[0] : null;
