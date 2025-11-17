@@ -19,7 +19,16 @@
     </div>
 
     <div id="gameWrap">
-      <canvas id="gameCanvas" width="600" height="450"></canvas>
+      <div id="canvasWrap">
+        <canvas id="gameCanvas" width="600" height="450"></canvas>
+
+        <!-- UI overlay sobre el canvas para animaciones / corazones -->
+        <div id="uiOverlay">
+          <div id="heartsDOM" aria-hidden="true"></div>
+          <div id="hitFlash"></div>
+        </div>
+      </div>
+
       <div id="sidePanel">
         <div id="playerPanels"></div>
         <div id="controls">
