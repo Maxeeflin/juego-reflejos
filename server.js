@@ -1,102 +1,151 @@
+// server.js
 const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+const crypto = require("crypto");
+
 const app = express();
-const http = require("http").createServer(app);
-const io = require("socket.io")(http);
+const server = http.createServer(app);
+const io = new Server(server);
 
 app.use(express.static("public"));
 
-const PORT = process.env.PORT || 3000;
+const rooms = {};
 
-// Lobbies en memoria
-let lobbies = {};
+function makeCode(len = 6) {
+  return crypto.randomBytes(len).toString("base64").replace(/[^A-Z0-9]/gi, "").slice(0, len).toUpperCase();
+}
 
 io.on("connection", (socket) => {
-    console.log("Nuevo jugador conectado:", socket.id);
+  console.log("socket connected:", socket.id);
 
-    socket.on("crear_lobby", (data) => {
-        const lobbyID = Math.random().toString(36).substr(2, 6);
-        lobbies[lobbyID] = {
-            jugadores: [],
-            turnoActual: 0,
-            rondasTotales: data.jugadores * 3,
-            rondasJugadores: Array(data.jugadores).fill(0),
-            maxJugadores: data.jugadores,
-        };
-        socket.emit("lobby_creada", lobbyID);
-    });
+  socket.on("create_room", ({ numPlayers, name }, cb) => {
+    let code;
+    do {
+      code = makeCode(6);
+    } while (rooms[code]);
 
-    socket.on("unirse_lobby", (lobbyID) => {
-        const lobby = lobbies[lobbyID];
-        if (!lobby) {
-            socket.emit("error_lobby", "Lobby no encontrado");
-            return;
+    rooms[code] = {
+      code,
+      hostSocketId: socket.id,
+      capacity: numPlayers,
+      players: {},
+      started: false,
+    };
+
+    rooms[code].players[socket.id] = { name: name || "Host", finished: false, points: 0 };
+    socket.join(code);
+
+    cb({ ok: true, code, room: rooms[code] });
+    io.to(code).emit("room_update", roomSummary(code));
+  });
+
+  socket.on("join_room", ({ code, name }, cb) => {
+    code = (code || "").toUpperCase();
+    const room = rooms[code];
+    if (!room) {
+      cb({ ok: false, error: "Sala no encontrada" });
+      return;
+    }
+    if (room.started) {
+      cb({ ok: false, error: "La partida ya ha empezado" });
+      return;
+    }
+    if (Object.keys(room.players).length >= room.capacity) {
+      cb({ ok: false, error: "Sala llena" });
+      return;
+    }
+
+    room.players[socket.id] = { name: name || "Player", finished: false, points: 0 };
+    socket.join(code);
+
+    cb({ ok: true, code, room: roomSummary(code) });
+    io.to(code).emit("room_update", roomSummary(code));
+  });
+
+  socket.on("start_game", ({ code }, cb) => {
+    const room = rooms[code];
+    if (!room) return cb && cb({ ok: false, error: "Sala no encontrada" });
+    if (socket.id !== room.hostSocketId) return cb && cb({ ok: false, error: "Solo el host puede empezar" });
+
+    room.started = true;
+    // reset players finished/points but keep lobby
+    for (const sid of Object.keys(room.players)) {
+      room.players[sid].finished = false;
+      room.players[sid].points = 0;
+    }
+
+    io.to(code).emit("game_started", { code });
+    io.to(code).emit("room_update", roomSummary(code));
+    cb && cb({ ok: true });
+  });
+
+  socket.on("player_finished", ({ code, totalPoints }, cb) => {
+    const room = rooms[code];
+    if (!room) return cb && cb({ ok: false, error: "Sala no encontrada" });
+    if (!room.players[socket.id]) return cb && cb({ ok: false, error: "No perteneces a la sala" });
+
+    room.players[socket.id].finished = true;
+    room.players[socket.id].points = totalPoints || 0;
+
+    io.to(code).emit("room_update", roomSummary(code));
+
+    // check if everybody finished
+    const allFinished = Object.values(room.players).length === room.capacity &&
+      Object.values(room.players).every(p => p.finished);
+
+    if (allFinished) {
+      const results = Object.values(room.players).map((p) => ({ name: p.name, points: p.points }));
+      io.to(code).emit("game_over", { results });
+
+      // **NO BORRAMOS la sala**; permitimos reinicio
+      for (const sid of Object.keys(room.players)) {
+        room.players[sid].finished = false;
+        room.players[sid].points = 0;
+      }
+      room.started = false;
+      io.to(code).emit("room_update", roomSummary(code));
+    }
+
+    cb && cb({ ok: true });
+  });
+
+  socket.on("leave_room", ({ code }, cb) => {
+    const room = rooms[code];
+    if (!room) return cb && cb({ ok: false });
+    delete room.players[socket.id];
+    socket.leave(code);
+    if (Object.keys(room.players).length === 0) delete rooms[code];
+    else io.to(code).emit("room_update", roomSummary(code));
+    cb && cb({ ok: true });
+  });
+
+  socket.on("disconnect", () => {
+    for (const code of Object.keys(rooms)) {
+      if (rooms[code].players[socket.id]) {
+        delete rooms[code].players[socket.id];
+        io.to(code).emit("room_update", roomSummary(code));
+        if (rooms[code].hostSocketId === socket.id) {
+          const sids = Object.keys(rooms[code].players);
+          rooms[code].hostSocketId = sids.length ? sids[0] : null;
         }
-        if (lobby.jugadores.length >= lobby.maxJugadores) {
-            socket.emit("error_lobby", "Lobby lleno");
-            return;
-        }
-
-        lobby.jugadores.push({ id: socket.id, puntos: 0, vidas: 3, fuera: 0 });
-        socket.join(lobbyID);
-        io.to(lobbyID).emit("actualizar_jugadores", lobby.jugadores);
-
-        if (lobby.jugadores.length === lobby.maxJugadores) {
-            io.to(lobbyID).emit("iniciar_ronda", { turno: 0 });
-        }
-    });
-
-    socket.on("fin_turno", ({ lobbyID, puntos, falloFuera }) => {
-        const lobby = lobbies[lobbyID];
-        if (!lobby) return;
-
-        const jugador = lobby.jugadores[lobby.turnoActual];
-        jugador.puntos += puntos;
-
-        if (falloFuera && jugador.fuera < 3) {
-            jugador.vidas -= 1;
-            jugador.fuera += 1;
-        }
-
-        lobby.rondasJugadores[lobby.turnoActual] += 1;
-
-        if (lobby.rondasJugadores[lobby.turnoActual] >= 3 || jugador.vidas <= 0) {
-            lobby.turnoActual += 1;
-        }
-
-        const totalRondasJugadores = lobby.rondasJugadores.reduce((a, b) => a + b, 0);
-        if (totalRondasJugadores >= lobby.rondasTotales) {
-            // Calcular ganador
-            let ganador = lobby.jugadores[0];
-            lobby.jugadores.forEach(j => {
-                if (j.puntos > ganador.puntos) ganador = j;
-            });
-
-            io.to(lobbyID).emit("fin_juego", { jugadores: lobby.jugadores, ganador: ganador.id });
-
-            // Reiniciar partida
-            lobby.jugadores.forEach(j => {
-                j.puntos = 0;
-                j.vidas = 3;
-                j.fuera = 0;
-            });
-            lobby.turnoActual = 0;
-            lobby.rondasJugadores = Array(lobby.maxJugadores).fill(0);
-            io.to(lobbyID).emit("reiniciar_partida");
-            return;
-        }
-
-        if (lobby.turnoActual >= lobby.jugadores.length) lobby.turnoActual = 0;
-        io.to(lobbyID).emit("iniciar_ronda", { turno: lobby.turnoActual });
-    });
-
-    socket.on("disconnect", () => {
-        console.log("Jugador desconectado:", socket.id);
-        for (let id in lobbies) {
-            const lobby = lobbies[id];
-            lobby.jugadores = lobby.jugadores.filter(j => j.id !== socket.id);
-            if (lobby.jugadores.length === 0) delete lobbies[id];
-        }
-    });
+        if (Object.keys(rooms[code].players).length === 0) delete rooms[code];
+      }
+    }
+  });
 });
 
-http.listen(PORT, () => console.log(`Servidor escuchando en puerto ${PORT}`));
+function roomSummary(code) {
+  const r = rooms[code];
+  if (!r) return null;
+  return {
+    code: r.code,
+    capacity: r.capacity,
+    started: r.started,
+    hostSocketId: r.hostSocketId,
+    players: Object.entries(r.players).map(([sid, p]) => ({ socketId: sid, name: p.name, finished: p.finished, points: p.points })),
+  };
+}
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log("Server listening on", PORT));
