@@ -1,4 +1,4 @@
-// game.js (con animaciones: hit flash, shake, corazones DOM y final pantalla podium)
+// game.js
 const socket = io();
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
@@ -23,10 +23,10 @@ const btnStart = $("btnStart");
 const statusDiv = $("status");
 const finalScreen = $("finalScreen");
 
-const uiOverlay = $("uiOverlay");
 const heartsDOM = $("heartsDOM");
+const borderFlash = $("borderFlash");
 const hitFlash = $("hitFlash");
-const gameWrap = $("gameWrap"); // para shake
+const gameWrap = $("gameWrap");
 
 // Game constants
 const RONDAS_POR_JUGADOR = 3;
@@ -46,7 +46,6 @@ let gameState = {
   players: [],
   myIndex: -1,
   turnoIndex: 0,
-  // velocidad actual para la bola
   velocidad: VELOCIDAD_INICIAL,
   sessionVel: VELOCIDAD_INICIAL, // se incrementa dentro de la misma ronda al acertar
   radio: RADIO_INICIAL,
@@ -59,9 +58,7 @@ let gameState = {
 };
 
 // ----------------- Socket handlers -----------------
-socket.on("connect", () => {
-  mySocketId = socket.id;
-});
+socket.on("connect", () => { mySocketId = socket.id; });
 
 socket.on("room_update", (room) => {
   if (!room) return;
@@ -135,40 +132,32 @@ function updateRoomUI() {
   btnStart.style.display = (myRoom.hostSocketId === mySocketId && !myRoom.started) ? "inline-block" : "none";
 }
 
-/* ----- DOM hearts helpers ----- */
+// ----------------- DOM hearts helpers -----------------
 function renderHearts(vidas) {
   heartsDOM.innerHTML = "";
   for (let i = 0; i < VIDAS_FUERA; i++) {
     const h = document.createElement("div");
     h.className = "heart";
-    if (i < vidas) {
-      h.innerHTML = `<span class="full">❤️</span>`;
-    } else {
-      h.innerHTML = `<span class="empty">💔</span>`;
-    }
+    h.innerHTML = i < vidas ? `<span class="full">❤️</span>` : `<span class="empty">💔</span>`;
     heartsDOM.appendChild(h);
   }
 }
 
 function animateHeartLoss() {
-  // ponemos clase a la última corazón lleno para animarlo
   const hearts = heartsDOM.querySelectorAll(".heart");
   for (let i = hearts.length -1; i >= 0; i--) {
     const span = hearts[i].querySelector(".full");
     if (span) {
       hearts[i].classList.add("broken");
-      // quitar la clase después de la animación
       setTimeout(()=> hearts[i].classList.remove("broken"), 700);
-      // convertimos el span a empty tras animación (a los 350ms)
       setTimeout(()=> hearts[i].innerHTML = `<span class="empty">💔</span>`, 350);
       break;
     }
   }
 }
 
-/* ----- Hit flash & shake helpers ----- */
+// ----------------- Hit flash & shake helpers -----------------
 function showHitFlash(x, y) {
-  // x,y coordenadas en canvas; traducir a % para background radial-gradient
   const rect = canvas.getBoundingClientRect();
   const px = ((x - rect.left) / rect.width) * 100;
   const py = ((y - rect.top) / rect.height) * 100;
@@ -183,11 +172,15 @@ function doShake() {
   setTimeout(()=> gameWrap.classList.remove('shake'), 420);
 }
 
-// ----------------- Local game logic (igual a antes con llamadas visuales) -----------------
+function flashBorder() {
+  borderFlash.style.opacity = 1;
+  setTimeout(()=> borderFlash.style.opacity = 0, 300);
+}
+
+// ----------------- Local game logic -----------------
 function startLocalPlay() {
   gameState.mode = "playing";
   gameState.myName = nameInput.value.trim() || "Player";
-  // reset local
   gameState.sessionVel = VELOCIDAD_INICIAL;
   gameState.velocidad = VELOCIDAD_INICIAL;
   gameState.radio = RADIO_INICIAL;
@@ -197,7 +190,7 @@ function startLocalPlay() {
   gameState.rondaEnCurso = false;
   gameState.growJob = null;
 
-  renderHearts(gameState.vidas); // render inicial
+  renderHearts(gameState.vidas);
   drawClear();
   drawCenteredText("Toca para iniciar (pantalla)", 20);
   canvas.onclick = () => {
@@ -220,7 +213,6 @@ function startCountdown(n, cb) {
 }
 
 function startRound() {
-  // velocidad tomada desde sessionVel (incrementada por aciertos dentro de la ronda)
   gameState.velocidad = gameState.sessionVel;
   gameState.radio = RADIO_INICIAL;
   gameState.x = randInt(RADIO_MAXIMO, CANVAS_WIDTH - RADIO_MAXIMO);
@@ -245,7 +237,6 @@ gameState.growLoop = function growLoop() {
     stopGrowJob();
     gameState.rondaEnCurso = false;
     gameState.rondasPerdidas += 1;
-    // al explotar la bola, la ronda termina: reseteamos sessionVel para la siguiente ronda
     gameState.sessionVel = VELOCIDAD_INICIAL;
     drawExplosion(gameState.x, gameState.y, gameState.radio);
     setTimeout(() => onRoundEnded(), 1000);
@@ -262,34 +253,25 @@ function onCanvasClick(evt) {
   if (!gameState.rondaEnCurso) return;
   const dist = Math.hypot(x - gameState.x, y - gameState.y);
   if (dist <= gameState.radio) {
-    // HIT: subir velocidad para la próxima bola DENTRO DE LA MISMA RONDA
+    // HIT
     stopGrowJob();
     const puntos = Math.max(0, Math.floor(RADIO_MAXIMO - gameState.radio));
     gameState.puntos += puntos;
     drawHitEffect(x, y, "+" + puntos);
-
-    // Visual: flash en el punto de click
     showHitFlash(evt.clientX, evt.clientY);
-
-    // aumentar sessionVel (persistirá mientras el jugador no pierda la ronda)
-    gameState.sessionVel = Math.min(5, (gameState.sessionVel + VELOCIDAD_INCREMENTO)); // límite razonable
+    gameState.sessionVel = Math.min(5, gameState.sessionVel + VELOCIDAD_INCREMENTO);
     gameState.velocidad = gameState.sessionVel;
-
     gameState.rondaEnCurso = false;
-
-    // pequeña pausa y volver a generar otro círculo dentro de la misma ronda
     setTimeout(() => startRound(), 250);
   } else {
     // MISS
     gameState.vidas -= 1;
     drawHitEffect(x, y, "❌");
-
-    // Visual: animar corazón y shake
     animateHeartLoss();
     doShake();
+    flashBorder();
 
     if (gameState.vidas <= 0) {
-      // pierde la ronda: resetear sessionVel para la próxima ronda
       stopGrowJob();
       gameState.rondasPerdidas += 1;
       gameState.rondaEnCurso = false;
@@ -327,19 +309,11 @@ function drawCircle(x,y,r,color="#ff0000") { ctx.beginPath(); ctx.fillStyle=colo
 function drawFrame() {
   drawClear();
   drawCircle(gameState.x, gameState.y, gameState.radio, colorForRadius(gameState.radio));
-  // keep canvas hearts draw for redundancy but we use DOM hearts for animations
-  //drawHearts(); // removed to avoid overlap with DOM hearts
   ctx.fillStyle="white";
   ctx.font="16px Arial";
   ctx.textAlign="left";
   ctx.fillText(`Rondas perdidas: ${gameState.rondasPerdidas}/${RONDAS_POR_JUGADOR}`, 10,30);
   ctx.fillText(`Puntos: ${gameState.puntos}`, 10,50);
-}
-function drawHearts() {
-  const hearts="❤️".repeat(gameState.vidas)+"💔".repeat(Math.max(0,VIDAS_FUERA-gameState.vidas));
-  ctx.font="22px Arial";
-  ctx.textAlign="right";
-  ctx.fillText(hearts,CANVAS_WIDTH-10,30);
 }
 function drawExplosion(x,y,r) {
   drawCircle(x,y,r,"#000");
@@ -350,7 +324,7 @@ function drawHitEffect(x,y,text) { drawFrame(); ctx.fillStyle="#bfff00"; ctx.fon
 function colorForRadius(r) { const ratio=Math.min(1,r/RADIO_MAXIMO); const rx=Math.floor(Math.min(255,255*ratio*2)); const gx=Math.floor(Math.max(0,255-255*ratio*2)); return `rgb(${rx},${gx},0)`; }
 function randInt(a,b) { return Math.floor(Math.random()*(b-a+1))+a; }
 
-// ------------------- Final results UI (mejorada) -------------------
+// ------------------- Final results UI -------------------
 function showFinalResults(results) {
   drawClear();
   finalScreen.style.display="flex";
@@ -363,16 +337,13 @@ function showFinalResults(results) {
   title.innerText = "Estadísticas finales";
   card.appendChild(title);
 
-  // podium container
   const podium = document.createElement("div");
   podium.className = "podium";
   card.appendChild(podium);
 
-  // sort results descending
   const sorted = results.slice().sort((a,b)=> b.points - a.points);
-  // build three slots (if less than 3, fill with blanks)
   const slots = [sorted[1] || {name:"-", points:0}, sorted[0] || {name:"-", points:0}, sorted[2] || {name:"-", points:0}];
-  // slots order arranged center=1st, left=2nd, right=3rd visually
+
   slots.forEach((s, idx) => {
     const slot = document.createElement("div");
     slot.className = "slot";
@@ -381,7 +352,7 @@ function showFinalResults(results) {
     bar.style.height = "0px";
     const label = document.createElement("div");
     label.className = "label";
-    label.innerText = `${s.name} (${s.points})`;
+    label.innerText = `${s.name}: ${s.points}`;
     slot.appendChild(bar);
     slot.appendChild(label);
     podium.appendChild(slot);
@@ -391,12 +362,9 @@ function showFinalResults(results) {
   btn.innerText = "Reiniciar partida";
   btn.onclick = () => {
     finalScreen.style.display = "none";
-    // emit restart to server (we use start_game in your server; here we call restart_game if exists)
-    // try restart_game first (safer), fallback to start_game
     socket.emit("restart_game", { code: myRoom.code }, (res) => {
-      if (res && res.ok) {
-        startLocalPlay();
-      } else {
+      if (res && res.ok) startLocalPlay();
+      else {
         socket.emit("start_game", { code: myRoom.code }, (res2) => {
           if (res2 && res2.ok) startLocalPlay();
           else alert("Error reiniciando la partida");
@@ -404,52 +372,17 @@ function showFinalResults(results) {
       }
     });
   };
-
   card.appendChild(btn);
   finalScreen.appendChild(card);
 
-  // animate bars and count numbers
   const bars = finalScreen.querySelectorAll(".bar");
-  const names = sorted.map(r => r.name);
-  const targets = sorted.map(r => r.points || 0);
+  const targets = slots.map(s=>s.points);
   const maxTarget = Math.max(...targets,1);
 
-  // set heights proportionally and animate numbers under labels
   bars.forEach((bar, i) => {
-    // height % relative to maxTarget
-    const heightPercent = Math.round((targets[i] / (maxTarget)) * 100);
-    // set final height in px relative to podium height (160)
-    const finalPx = Math.round((heightPercent/100) * 140) + 20; // min height 20
-    // small delay for staggered effect
-    setTimeout(()=> { bar.style.height = finalPx + "px"; }, i*150);
+    const heightPercent = Math.round((targets[i] / maxTarget) * 100);
+    const finalPx = Math.round((heightPercent/100)*140)+20;
+    setTimeout(()=>{ bar.style.height = finalPx + "px"; }, i*150);
   });
-
-  // animate numeric counters under labels (replace label text)
-  const labels = finalScreen.querySelectorAll(".label");
-  const counters = targets.map(()=>0);
-  function step() {
-    let done = true;
-    for (let i=0;i<counters.length;i++) {
-      if (counters[i] < targets[i]) {
-        counters[i] += Math.max(1, Math.floor(targets[i]/20));
-        if (counters[i] > targets[i]) counters[i] = targets[i];
-        labels[i].innerText = `${sorted[i].name}: ${counters[i]}`;
-        done = false;
-      }
-    }
-    if (!done) requestAnimationFrame(step);
-    else {
-      // winner text
-      const topScore = Math.max(...targets);
-      const winners = sorted.filter(r => r.points === topScore);
-      const winnerText = document.createElement("h3");
-      winnerText.style.marginTop = "12px";
-      if (winners.length === 1) winnerText.innerText = `${winners[0].name} GANA 🏆`;
-      else winnerText.innerText = "¡Empate! 🤝";
-      card.appendChild(winnerText);
-    }
-  }
-  step();
 }
-
 drawCenteredText("Bienvenido — crea o únete a una sala",20);
