@@ -24,7 +24,7 @@ const btnStart = $("btnStart");
 const statusDiv = $("status");
 const finalScreen = $("finalScreen");
 
-const RONDAS_POR_JUGADOR = 3;
+const RONDAS_POR_JUGADOR = 3; // same as server side
 const VIDAS_FUERA = 3;
 const RADIO_INICIAL = 10;
 const RADIO_MAXIMO = 60;
@@ -33,17 +33,19 @@ const VELOCIDAD_INCREMENTO = 0.12;
 const UPDATE_MS = 25;
 const CUENTA_ATRAS_SEG = 3;
 
-// ---------------- Local game state -----------------
+// local game state:
 let gameState = {
-  mode: "menu",
+  mode: "menu", // menu | playing | finished
   myName: "",
   roomCode: null,
-  players: [],
+  players: [], // { socketId, name, finished, points }
   myIndex: -1,
   turnoIndex: 0,
+  // single-player local session state
   velocidad: VELOCIDAD_INICIAL,
   radio: RADIO_INICIAL,
   x: 0, y: 0,
+  circleId: null,
   rondaEnCurso: false,
   vidas: VIDAS_FUERA,
   rondasPerdidas: 0,
@@ -51,9 +53,10 @@ let gameState = {
   growJob: null,
 };
 
-// ---------------- Socket handlers -----------------
+// ----------------- Socket handlers -----------------
 socket.on("connect", () => {
   mySocketId = socket.id;
+  console.log("connected", mySocketId);
 });
 
 socket.on("room_update", (room) => {
@@ -62,16 +65,22 @@ socket.on("room_update", (room) => {
   updateRoomUI();
 });
 
+socket.on("room_created", (payload) => {
+  // not used in this flow (we use callback)
+});
+
 socket.on("game_started", ({ code }) => {
   statusDiv.innerText = "Partida iniciada — cuenta atrás...";
+  // start local game flow (server will not dictate rounds)
   startLocalPlay();
 });
 
 socket.on("game_over", ({ results }) => {
+  // show final results with counting animation
   showFinalResults(results);
 });
 
-// ---------------- UI actions -----------------
+// ----------------- UI actions -----------------
 btnCreate.addEventListener("click", () => {
   const name = nameInput.value.trim() || "Host";
   const numPlayers = prompt("Modo: 2 o 3 jugadores? (escribe 2 o 3)", "2");
@@ -113,7 +122,7 @@ btnStart.addEventListener("click", () => {
   });
 });
 
-// ---------------- Helpers -----------------
+// ----------------- Helpers -----------------
 function updateRoomUI() {
   playerPanels.innerHTML = "";
   if (!myRoom) return;
@@ -127,6 +136,7 @@ function updateRoomUI() {
     playerPanels.appendChild(div);
   });
 
+  // show start button only to host
   if (myRoom.hostSocketId === mySocketId && !myRoom.started) {
     btnStart.style.display = "inline-block";
   } else {
@@ -134,10 +144,17 @@ function updateRoomUI() {
   }
 }
 
-// ---------------- Local game logic -----------------
+// ----------------- Local game logic (client side) --------------
+// We'll reuse core idea: circle grows, click inside gives points, click outside loses life,
+// circle explodes when reaches max -> that ends the "round" for the player.
+// Player repeats until they have lost RONDAS_POR_JUGADOR rounds (i.e. rondasPerdidas reaches 3).
+// When finished, send 'player_finished' to server with puntos total.
+
 function startLocalPlay() {
+  // hide menu UI
   gameState.mode = "playing";
   gameState.myName = nameInput.value.trim() || "Player";
+  // reset local counters
   gameState.velocidad = VELOCIDAD_INICIAL;
   gameState.radio = RADIO_INICIAL;
   gameState.vidas = VIDAS_FUERA;
@@ -146,15 +163,18 @@ function startLocalPlay() {
   gameState.rondaEnCurso = false;
   gameState.growJob = null;
 
+  // draw initial message and start countdown
   drawClear();
   drawCenteredText("Toca para iniciar (pantalla)", 20);
-
+  // bind first click to start countdown
   canvas.onclick = () => {
     canvas.onclick = null;
-    startCountdown(CUENTA_ATRAS_SEG, () => startRound());
+    startCountdown(CUENTA_ATRAS_SEG, () => {
+      startRound();
+    });
   };
   statusDiv.innerText = "Tu turno: empieza en breve";
-  updateRoomUI();
+  updateRoomUI(); // reflect started state
 }
 
 function startCountdown(n, cb) {
@@ -173,13 +193,16 @@ function startCountdown(n, cb) {
 }
 
 function startRound() {
+  // new round initialization: pick circle pos, reset radio & vidas for this round
   gameState.radio = RADIO_INICIAL;
   gameState.x = randInt(RADIO_MAXIMO, CANVAS_WIDTH - RADIO_MAXIMO);
   gameState.y = randInt(RADIO_MAXIMO, CANVAS_HEIGHT - RADIO_MAXIMO);
   gameState.rondaEnCurso = true;
-  gameState.vidas = VIDAS_FUERA;
+  gameState.vidas = VIDAS_FUERA; // Each round player has 3 lives of misses as earlier design
   gameState.growLoop();
+  // bind click handler
   canvas.onclick = onCanvasClick;
+  // draw UI side (hearts, rounds left)
   drawFrame();
 }
 
@@ -194,11 +217,15 @@ gameState.growLoop = function growLoop() {
   if (!gameState.rondaEnCurso) return;
   gameState.radio += gameState.velocidad;
   if (gameState.radio >= RADIO_MAXIMO) {
+    // explosion => this counts as a lost round
     stopGrowJob();
     gameState.rondaEnCurso = false;
     gameState.rondasPerdidas += 1;
     drawExplosion(gameState.x, gameState.y, gameState.radio);
-    setTimeout(() => onRoundEnded(), 1000);
+    // after 1s, check if player has completed all 3 rounds
+    setTimeout(() => {
+      onRoundEnded();
+    }, 1000);
     return;
   }
   drawFrame();
@@ -212,6 +239,7 @@ function onCanvasClick(evt) {
   if (!gameState.rondaEnCurso) return;
   const dist = Math.hypot(x - gameState.x, y - gameState.y);
   if (dist <= gameState.radio) {
+    // hit
     stopGrowJob();
     const puntos = Math.max(0, Math.floor(RADIO_MAXIMO - gameState.radio));
     gameState.puntos += puntos;
@@ -220,11 +248,11 @@ function onCanvasClick(evt) {
     gameState.velocidad += VELOCIDAD_INCREMENTO;
     setTimeout(() => startRound(), 250);
   } else {
-    if (gameState.vidas > 0) {
-      gameState.vidas -= 1; // SOLO disminuye vidas
-    }
+    // miss
+    gameState.vidas -= 1;
     drawHitEffect(x, y, "❌");
     if (gameState.vidas <= 0) {
+      // player loses this round
       stopGrowJob();
       gameState.rondasPerdidas += 1;
       gameState.rondaEnCurso = false;
@@ -237,17 +265,23 @@ function onCanvasClick(evt) {
 }
 
 function onRoundEnded() {
+  // If player has completed RONDAS_POR_JUGADOR lost rounds then they are done
   drawFrame();
   if (gameState.rondasPerdidas >= RONDAS_POR_JUGADOR) {
+    // finished all rounds: notify server with total points
     statusDiv.innerText = "Has terminado tus rondas. Enviando resultados...";
     socket.emit("player_finished", { code: gameState.roomCode || myRoom.code, totalPoints: gameState.puntos }, (res) => {
       if (res && res.ok) {
         statusDiv.innerText = "Resultados enviados. Esperando a los demás...";
+        // disable canvas clicks
         canvas.onclick = null;
-      } else console.error("error sending finished", res);
+      } else {
+        console.error("error sending finished", res);
+      }
     });
     return;
   } else {
+    // start next round after 5s countdown (user asked 5s between rounds)
     statusDiv.innerText = `Perdiste la ronda. Próxima en 5s (rondas perdidas ${gameState.rondasPerdidas}/${RONDAS_POR_JUGADOR})`;
     canvas.onclick = null;
     startCountdown(5, () => {
@@ -257,8 +291,10 @@ function onRoundEnded() {
   }
 }
 
-// ---------------- Drawing helpers -----------------
-function drawClear() { ctx.clearRect(0,0,CANVAS_WIDTH,CANVAS_HEIGHT); }
+// ----------------- Drawing helpers -----------------
+function drawClear() {
+  ctx.clearRect(0,0,CANVAS_WIDTH,CANVAS_HEIGHT);
+}
 function drawCenteredText(text, size=24, color="#fff") {
   drawClear();
   ctx.fillStyle = color;
@@ -275,8 +311,11 @@ function drawCircle(x,y,r,color="#ff0000") {
 }
 function drawFrame() {
   drawClear();
+  // circle
   drawCircle(gameState.x, gameState.y, gameState.radio, colorForRadius(gameState.radio));
+  // hearts top-left
   drawHearts();
+  // rounds info top-right
   ctx.fillStyle = "white";
   ctx.font = "16px Arial";
   ctx.textAlign = "left";
@@ -291,10 +330,11 @@ function drawHearts() {
 }
 function drawExplosion(x,y,r) {
   drawCircle(x,y,r,"#000");
+  // small rings
   ctx.strokeStyle = "#ff6666";
-  for (let i=0;i<6;i++){
+  for (let i=0;i<6;i++) {
     ctx.beginPath();
-    ctx.arc(x,y,r+i*6,0,Math.PI*2);
+    ctx.arc(x,y,r + i*6,0,Math.PI*2);
     ctx.stroke();
   }
 }
@@ -313,11 +353,13 @@ function colorForRadius(r) {
 }
 function randInt(a,b) { return Math.floor(Math.random()*(b-a+1))+a; }
 
-// ---------------- Final results -----------------
+// ------------------- Final results UI -------------------
 function showFinalResults(results) {
+  // results: array of { name, points }
   drawClear();
   finalScreen.style.display = "flex";
-  finalScreen.innerHTML = "";
+  finalScreen.innerHTML = ""; // remove previous
+  // We'll draw in canvas too, but create overlay for buttons
   let cont = document.createElement("div");
   cont.style.color = "white";
   cont.style.textAlign = "center";
@@ -335,6 +377,7 @@ function showFinalResults(results) {
   cont.appendChild(btn);
   finalScreen.appendChild(cont);
 
+  // now animate numbers (rapid counting)
   const counters = results.map(() => 0);
   const targets = results.map(r => r.points || 0);
   function step() {
@@ -349,15 +392,17 @@ function showFinalResults(results) {
     }
     if (!done) requestAnimationFrame(step);
     else {
+      // announce winner
       let maxp = Math.max(...targets);
       const winners = results.filter(r => r.points === maxp);
       const text = document.createElement("h3");
-      text.innerText = winners.length === 1 ? `${winners[0].name} GANA 🏆` : "¡Empate! 🤝";
+      if (winners.length === 1) text.innerText = `${winners[0].name} GANA 🏆`;
+      else text.innerText = "¡Empate! 🤝";
       cont.appendChild(text);
     }
   }
   step();
 }
 
-// ---------------- Initial message -----------------
+// ------------------ initialize small UI labels ------------------
 drawCenteredText("Bienvenido — crea o únete a una sala", 20);
