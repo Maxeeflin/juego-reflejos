@@ -1,60 +1,76 @@
-/* styles.css - base mejorado */
-body { margin:0; background:#20232a; color:white; font-family: Arial, sans-serif; }
+/* Básico */
+body { margin:0; background:#181a1f; color:white; font-family: Arial, sans-serif; }
 #root { padding:10px; }
 #topbar { margin-bottom:8px; }
-#roomUI input, #roomUI button { margin-right:6px; padding:6px 8px; border-radius:6px; border: none; }
-#gameWrap { display:flex; gap:12px; align-items:flex-start; }
-#canvasWrap { position:relative; }
-#gameCanvas { background:#101010; border-radius:8px; box-shadow: 0 8px 20px rgba(0,0,0,0.6); display:block; }
-
-/* UI overlay sobre el canvas */
-#uiOverlay { position:absolute; left:0; top:0; right:0; bottom:0; pointer-events:none; }
-#heartsDOM { position:absolute; left:12px; top:12px; z-index:20; display:flex; gap:6px; align-items:center; }
-.heart {
-  width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; font-size:20px;
-  transform-origin:center;
-}
-.heart .full { color:#ff4d6d; transform:scale(1); }
-.heart .empty { color:#6b6b6b; }
-
-/* animación de latido al perder vida */
-@keyframes heartBeat {
-  0% { transform: scale(1); }
-  30% { transform: scale(1.4); }
-  60% { transform: scale(0.9); }
-  100% { transform: scale(1); }
-}
-.heart.broken { animation: heartBeat 600ms ease; opacity:0.6; }
-
-/* Hit flash: destello momentáneo */
-#hitFlash { position:absolute; inset:0; background: radial-gradient(circle at var(--x,50%) var(--y,50%), rgba(255,255,200,0.25), rgba(255,255,200,0.06) 40%, transparent 60%); opacity:0; transition: opacity 160ms ease; pointer-events:none; z-index:18; border-radius:8px; }
-#hitFlash.show { opacity:1; transition: opacity 200ms ease; }
-
-/* Shake del área del juego al fallo (se aplica a #gameWrap) */
-@keyframes shake {
-  0% { transform: translateX(0); }
-  20% { transform: translateX(-8px); }
-  40% { transform: translateX(6px); }
-  60% { transform: translateX(-4px); }
-  80% { transform: translateX(2px); }
-  100% { transform: translateX(0); }
-}
-#gameWrap.shake { animation: shake 420ms ease; }
+#roomUI input, #roomUI button { margin-right:6px; padding:6px 8px; border-radius:6px; border: none; font-size:14px; }
+#gameWrap { display:flex; gap:12px; justify-content:center; align-items:flex-start; position:relative; }
+#gameCanvas { background:#101010; border-radius:8px; box-shadow: 0 8px 20px rgba(0,0,0,0.6); }
 
 /* Side panel */
-#sidePanel { width:260px; }
-.playerCard { background:#2a2f36; padding:12px; border-radius:8px; margin-bottom:8px; }
+#sidePanel { width:260px; display:flex; flex-direction:column; align-items:center; gap:8px; }
+.playerCard { background:#2a2f36; padding:12px; border-radius:8px; margin-bottom:8px; width:100%; text-align:center; }
 .playerCard h4 { margin:0 0 6px 0; }
-#status { margin-top:12px; color:#ddd; }
 
-/* overlay pantalla final (mejorada) */
-.overlay { position:fixed; left:0; top:0; right:0; bottom:0; display:flex; align-items:center; justify-content:center; flex-direction:column; background: rgba(0,0,0,0.6); z-index:50; }
-#finalScreen .finalCard { background: linear-gradient(180deg,#111216,#1b1f26); padding:24px; border-radius:12px; box-shadow: 0 12px 40px rgba(0,0,0,0.7); min-width:360px; color:white; text-align:center; }
-.podium { display:flex; gap:12px; align-items:end; justify-content:center; margin:18px 0; height:160px; }
-.podium .slot { background:#2b3036; width:80px; display:flex; align-items:flex-end; justify-content:center; border-radius:6px 6px 0 0; position:relative; overflow:hidden; }
-.podium .bar { width:100%; background:linear-gradient(180deg,#ffd166,#ff9f1c); height:0; transition: height 700ms cubic-bezier(.2,.9,.2,1); display:flex; align-items:flex-end; justify-content:center; color:#111; font-weight:bold; padding-bottom:6px; }
-.podium .label { position:absolute; left:0; right:0; bottom:-28px; font-size:14px; color:#ddd; }
+/* Status */
+#status { margin-top:12px; text-align:center; font-weight:bold; }
 
-/* botoncito y textos */
-.finalCard button { background:#2b9cff; color:white; border:none; padding:10px 14px; border-radius:8px; cursor:pointer; margin-top:12px; }
-.finalCard h2 { margin:0 0 8px 0; }
+/* Overlay */
+.overlay { position:fixed; left:0; top:0; right:0; bottom:0; display:flex; align-items:center; justify-content:center; flex-direction:column; background: rgba(0,0,0,0.7); z-index:20; }
+
+/* DOM corazones */
+#heartsDOM {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 6px;
+  font-size: 26px;
+  z-index: 10;
+}
+.heart { transition: transform 0.3s; }
+.heart.broken { transform: scale(1.5); opacity:0; transition: transform 0.35s, opacity 0.35s; }
+
+/* Borde rojo al fallar */
+#borderFlash {
+  position: absolute;
+  top:0; left:0;
+  width:600px; height:450px;
+  border: 4px solid red;
+  pointer-events:none;
+  opacity:0;
+  transition: opacity 0.3s;
+  z-index: 9;
+}
+
+/* Hit flash */
+#hitFlash {
+  position:absolute;
+  top:0; left:0;
+  width:600px; height:450px;
+  pointer-events:none;
+  background: radial-gradient(circle at var(--x,50%) var(--y,50%), rgba(255,255,0,0.6) 0%, transparent 60%);
+  opacity:0;
+  transition: opacity 0.2s;
+  z-index:11;
+}
+#hitFlash.show { opacity:1; }
+
+/* Shake */
+#gameWrap.shake { animation: shakeAnim 0.42s; }
+@keyframes shakeAnim {
+  0% { transform: translate(0,0); }
+  20% { transform: translate(-8px,0); }
+  40% { transform: translate(8px,0); }
+  60% { transform: translate(-6px,0); }
+  80% { transform: translate(6px,0); }
+  100% { transform: translate(0,0); }
+}
+
+/* Final screen podium */
+.finalCard { background:#222; padding:20px 30px; border-radius:12px; text-align:center; display:flex; flex-direction:column; align-items:center; gap:12px; }
+.podium { display:flex; justify-content:center; align-items:flex-end; gap:12px; width:100%; }
+.slot { display:flex; flex-direction:column; align-items:center; }
+.bar { width:60px; background:#ffcc00; transition: height 0.8s ease; border-radius:6px; }
+.label { margin-top:6px; font-weight:bold; color:#fff; }
+.finalCard button { padding:8px 14px; border:none; border-radius:6px; background:#ffcc00; font-weight:bold; cursor:pointer; }
+.finalCard button:hover { background:#e6b800; }
