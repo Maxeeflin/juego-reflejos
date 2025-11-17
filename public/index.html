@@ -1,53 +1,38 @@
-<!DOCTYPE html>
-<html lang="es">
+<!doctype html>
+<html>
 <head>
-<meta charset="UTF-8">
-<title>Juego de Reflejos</title>
-<link rel="stylesheet" href="estilos.css">
+  <meta charset="utf-8" />
+  <title>Reflejos Multiplayer</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-<div id="menu">
-    <h1>Juego de Reflejos</h1>
-    <label for="numJugadores">Número de jugadores:</label>
-    <select id="numJugadores">
-        <option value="2">2 Jugadores</option>
-        <option value="3">3 Jugadores</option>
-    </select>
-    <button id="crearSala">Crear Sala</button>
-    <input type="text" id="lobbyInput" placeholder="ID de lobby">
-    <button id="unirseSala">Unirse a Sala</button>
-</div>
+  <div id="root">
+    <div id="topbar">
+      <div id="roomUI">
+        <button id="btnCreate">Crear Sala</button>
+        <input id="joinCode" placeholder="Código sala" maxlength="6" />
+        <input id="nameInput" placeholder="Tu nombre" />
+        <button id="btnJoin">Unirse</button>
+        <span id="roomInfo"></span>
+      </div>
+    </div>
 
-<div id="juego" style="display:none;">
-    <h2 id="turno">Turno: </h2>
-    <canvas id="canvas" width="600" height="600"></canvas>
-    <div id="infoJugadores"></div>
-</div>
+    <div id="gameWrap">
+      <canvas id="gameCanvas" width="600" height="450"></canvas>
+      <div id="sidePanel">
+        <div id="playerPanels"></div>
+        <div id="controls">
+          <button id="btnStart" style="display:none">Empezar partida (host)</button>
+          <div id="status"></div>
+        </div>
+      </div>
+    </div>
 
-<script src="/socket.io/socket.io.js"></script>
-<script src="juego.js"></script>
-<script>
-const btnCrear = document.getElementById("crearSala");
-const btnUnirse = document.getElementById("unirseSala");
-const numJugadores = document.getElementById("numJugadores");
-const lobbyInput = document.getElementById("lobbyInput");
-const menu = document.getElementById("menu");
-const juegoDiv = document.getElementById("juego");
+    <div id="finalScreen" class="overlay" style="display:none;"></div>
+  </div>
 
-btnCrear.addEventListener("click", () => {
-    crearLobby(parseInt(numJugadores.value));
-    menu.style.display = "none";
-    juegoDiv.style.display = "block";
-});
-
-btnUnirse.addEventListener("click", () => {
-    const id = lobbyInput.value.trim();
-    if(id) {
-        unirseLobby(id);
-        menu.style.display = "none";
-        juegoDiv.style.display = "block";
-    }
-});
-</script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="game.js"></script>
 </body>
 </html>
